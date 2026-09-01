@@ -903,7 +903,7 @@ function styleCell(cellObj, opts){
 async function buildOfferteWorkbook(o){
   const uurloon = o.header.uurloon || 0;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Offerte', { views:[{state:'frozen', ySplit:0}] });
+  const ws = wb.addWorksheet('Offerte');
   const NCOLS = 12; // A..L
 
   ws.columns = [
