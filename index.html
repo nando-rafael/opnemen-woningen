@@ -892,7 +892,7 @@ function fillCell(cellObj, argb){
 }
 function styleCell(cellObj, opts){
   opts = opts || {};
-  cellObj.font = Object.assign({name:'Calibri', size: opts.sz||10}, opts.bold?{bold:true}:{});
+  cellObj.font = Object.assign({name:'Calibri', size: opts.sz||10}, opts.bold?{bold:true}:{}, opts.color?{color:{argb:opts.color}}:{});
   if(opts.fill) fillCell(cellObj, opts.fill);
   if(opts.border!==false) cellObj.border = XLS_BORDER_ALL;
   if(opts.align) cellObj.alignment = Object.assign({vertical:'middle'}, {horizontal:opts.align}, opts.wrap?{wrapText:true}:{});
@@ -904,10 +904,11 @@ async function buildOfferteWorkbook(o){
   const uurloon = o.header.uurloon || 0;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Offerte');
-  const NCOLS = 12; // A..L
+  const NCOLS = 14; // A..N — 1-op-1 met de kolommen uit het origineel
 
   ws.columns = [
-    {width:9},{width:11},{width:10},{width:8},{width:6},{width:52},{width:2},{width:8},{width:10},{width:11},{width:11},{width:11}
+    {width:9},{width:11},{width:10},{width:8},{width:6},{width:52},
+    {width:8},{width:10},{width:9},{width:9},{width:11},{width:9},{width:11},{width:11}
   ];
 
   // Row 2: title banner
@@ -918,11 +919,12 @@ async function buildOfferteWorkbook(o){
   styleCell(titleRow.getCell(1), {bold:true, sz:13, fill:XLS_BLUE, border:false, align:'left'});
   titleRow.height = 22;
 
-  // Header/summary rows (3..11)
+  // Header/summary rows (3..)
   const totArbeid = o.lines.reduce((s,l)=> s + l.mu*l.aantal*uurloon, 0);
   const totMat    = o.lines.reduce((s,l)=> s + l.mat*l.aantal, 0);
   const totaalExclBtw = totArbeid + totMat;
   const totUren = o.lines.reduce((s,l)=> s + l.mu*l.aantal, 0);
+  const incompleet = o.lines.some(l => !l.dekking || !l.vertrek);
 
   const leftRows = [
     ['Naam aannemer', 'Oké Vastgoedservice', false],
@@ -939,11 +941,12 @@ async function buildOfferteWorkbook(o){
     ['Totaal bedrag rekenblad', null, true],
     ['Loonbedrag manuren excl. BTW', totArbeid, false],
     ['Materiaalbedrag excl. BTW', totMat, false],
-    [null, null, false],
+    incompleet ? ['WAARSCHUWING', null, 'warn'] : [null, null, false],
     ['Totaal excl. BTW', totaalExclBtw, true],
     ['Totaal aantal uren', totUren, false],
   ];
   const startRow = 3;
+  const LABEL_COL = 11, VALUE_COL = 14; // rechter totalenbox: uitgelijnd met arbeid t/m totaal
   const maxRows = Math.max(leftRows.length, rightRows.length);
   for(let i=0;i<maxRows;i++){
     const row = ws.getRow(startRow+i);
@@ -956,11 +959,17 @@ async function buildOfferteWorkbook(o){
     }
     const r = rightRows[i];
     if(r){
-      row.getCell(8).value = r[0];
-      styleCell(row.getCell(8), {bold:r[2], border:false});
-      if(r[1]!==null){
-        row.getCell(11).value = Math.round(r[1]*100)/100;
-        styleCell(row.getCell(11), {bold:r[2], border:false, numFmt:'"€" #,##0.00', align:'right'});
+      if(r[2]==='warn'){
+        ws.mergeCells(startRow+i, LABEL_COL, startRow+i, NCOLS);
+        row.getCell(LABEL_COL).value = 'dekkingscode en/of vertrek niet overal ingevuld!';
+        for(let c=LABEL_COL;c<=NCOLS;c++){ styleCell(row.getCell(c), {bold:true, border:false, fill:'FFFF0000', color:'FFFFFFFF'}); }
+      } else if(r[0]!==null){
+        row.getCell(LABEL_COL).value = r[0];
+        styleCell(row.getCell(LABEL_COL), {bold:r[2], border:false});
+        if(r[1]!==null){
+          row.getCell(VALUE_COL).value = Math.round(r[1]*100)/100;
+          styleCell(row.getCell(VALUE_COL), {bold:r[2], border:false, numFmt:'"€" #,##0.00', align:'right'});
+        }
       }
     }
   }
@@ -973,9 +982,9 @@ async function buildOfferteWorkbook(o){
   for(let c=1;c<=NCOLS;c++){ styleCell(bannerRow.getCell(c), {fill:XLS_BLUE, border:false}); }
   styleCell(bannerRow.getCell(1), {bold:true, sz:12, fill:XLS_BLUE, border:false});
 
-  // Column headers
+  // Column headers — letterlijk zoals het origineel
   const headRowNum = bannerRowNum + 1;
-  const headers = ['dekking','vertrek','code','aantal','ehd','naam','','mu','mat','arbeid','materiaal','totaal'];
+  const headers = ['dekking','vertrek','code','hvh','ehd','naam','mu','mat','btw loon','btw mat','arbeid','mu tot','mat tot','totaal'];
   const headRow = ws.getRow(headRowNum);
   headers.forEach((h,i)=>{ headRow.getCell(i+1).value = h; styleCell(headRow.getCell(i+1), {bold:true, fill:XLS_GREY}); });
 
@@ -985,8 +994,9 @@ async function buildOfferteWorkbook(o){
     const rowNum = dataFirstRow + idx;
     const row = ws.getRow(rowNum);
     const arbeid = l.mu * l.aantal * uurloon;
-    const mat = l.mat * l.aantal;
-    const totaal = arbeid + mat;
+    const muTot  = l.mu * l.aantal;
+    const matTot = l.mat * l.aantal;
+    const totaal = arbeid + matTot;
     const isSchoonmaak = /^4/.test(l.code);
 
     row.getCell(1).value = l.dekking || '';
@@ -995,23 +1005,28 @@ async function buildOfferteWorkbook(o){
     styleCell(row.getCell(2), {fill:XLS_GREEN});
     row.getCell(3).value = /^\d+$/.test(l.code) ? Number(l.code) : l.code; // als getal opslaan zoals het origineel, tenzij er letters in de code zitten
     styleCell(row.getCell(3), {fill: isSchoonmaak ? XLS_GOLD : undefined});
-    row.getCell(4).value = l.aantal;
-    styleCell(row.getCell(4), {align:'right', numFmt:'0.##'});
+    row.getCell(4).value = l.aantal;                                        // hvh
+    styleCell(row.getCell(4), {align:'right', numFmt:'0.00'});
     row.getCell(5).value = l.ehd||'';
     styleCell(row.getCell(5), {align:'center'});
     row.getCell(6).value = l.naam;
     styleCell(row.getCell(6), {wrap:true});
-    styleCell(row.getCell(7), {});
-    row.getCell(8).value = l.mu;
-    styleCell(row.getCell(8), {align:'right', numFmt:'0.####'});
-    row.getCell(9).value = Math.round(l.mat*100)/100;
-    styleCell(row.getCell(9), {align:'right', numFmt:'"€" #,##0.00'});
-    row.getCell(10).value = Math.round(arbeid*100)/100;
-    styleCell(row.getCell(10), {align:'right', numFmt:'"€" #,##0.00'});
-    row.getCell(11).value = Math.round(mat*100)/100;
+    row.getCell(7).value = l.mu;
+    styleCell(row.getCell(7), {align:'right', numFmt:'0.####'});
+    row.getCell(8).value = Math.round(l.mat*100)/100;                       // mat (prijs per eenheid)
+    styleCell(row.getCell(8), {align:'right', numFmt:'"€" #,##0.00'});
+    row.getCell(9).value = l.btwl!=null ? l.btwl : 0.21;                    // btw loon
+    styleCell(row.getCell(9), {align:'right', numFmt:'0%'});
+    row.getCell(10).value = l.btwm!=null ? l.btwm : 0.21;                   // btw mat
+    styleCell(row.getCell(10), {align:'right', numFmt:'0%'});
+    row.getCell(11).value = Math.round(arbeid*100)/100;                     // arbeid
     styleCell(row.getCell(11), {align:'right', numFmt:'"€" #,##0.00'});
-    row.getCell(12).value = Math.round(totaal*100)/100;
-    styleCell(row.getCell(12), {align:'right', numFmt:'"€" #,##0.00'});
+    row.getCell(12).value = Math.round(muTot*10000)/10000;                  // mu tot
+    styleCell(row.getCell(12), {align:'right', numFmt:'0.####'});
+    row.getCell(13).value = Math.round(matTot*100)/100;                     // mat tot
+    styleCell(row.getCell(13), {align:'right', numFmt:'"€" #,##0.00'});
+    row.getCell(14).value = Math.round(totaal*100)/100;                     // totaal
+    styleCell(row.getCell(14), {align:'right', numFmt:'"€" #,##0.00'});
   });
 
   // Totals row
@@ -1019,12 +1034,14 @@ async function buildOfferteWorkbook(o){
   const totRow = ws.getRow(totRowNum);
   totRow.getCell(6).value = 'Totaal';
   styleCell(totRow.getCell(6), {bold:true});
-  totRow.getCell(10).value = Math.round(totArbeid*100)/100;
-  styleCell(totRow.getCell(10), {bold:true, align:'right', numFmt:'"€" #,##0.00'});
-  totRow.getCell(11).value = Math.round(totMat*100)/100;
+  totRow.getCell(11).value = Math.round(totArbeid*100)/100;
   styleCell(totRow.getCell(11), {bold:true, align:'right', numFmt:'"€" #,##0.00'});
-  totRow.getCell(12).value = Math.round(totaalExclBtw*100)/100;
-  styleCell(totRow.getCell(12), {bold:true, align:'right', numFmt:'"€" #,##0.00'});
+  totRow.getCell(12).value = Math.round(totUren*10000)/10000;
+  styleCell(totRow.getCell(12), {bold:true, align:'right', numFmt:'0.####'});
+  totRow.getCell(13).value = Math.round(totMat*100)/100;
+  styleCell(totRow.getCell(13), {bold:true, align:'right', numFmt:'"€" #,##0.00'});
+  totRow.getCell(14).value = Math.round(totaalExclBtw*100)/100;
+  styleCell(totRow.getCell(14), {bold:true, align:'right', numFmt:'"€" #,##0.00'});
 
   // ---- Hidden helper sheet + dropdown data validation (dekking/vertrek), matching het origineel ----
   const help = wb.addWorksheet('Lijsten');
