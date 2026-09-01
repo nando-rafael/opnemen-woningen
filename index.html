@@ -993,7 +993,7 @@ async function buildOfferteWorkbook(o){
     styleCell(row.getCell(1), {fill:XLS_GREEN});
     row.getCell(2).value = l.vertrek || '';
     styleCell(row.getCell(2), {fill:XLS_GREEN});
-    row.getCell(3).value = l.code;
+    row.getCell(3).value = /^\d+$/.test(l.code) ? Number(l.code) : l.code; // als getal opslaan zoals het origineel, tenzij er letters in de code zitten
     styleCell(row.getCell(3), {fill: isSchoonmaak ? XLS_GOLD : undefined});
     row.getCell(4).value = l.aantal;
     styleCell(row.getCell(4), {align:'right', numFmt:'0.##'});
@@ -1044,6 +1044,13 @@ async function buildOfferteWorkbook(o){
     styleCell(ws.getRow(r).getCell(1), {fill:XLS_GREEN});
     styleCell(ws.getRow(r).getCell(2), {fill:XLS_GREEN});
   }
+
+  // Fix: ExcelJS' standaard pageSetup schrijft horizontalDpi/verticalDpi als 4294967295,
+  // wat niet-Excel-conforme waarde is en de "inhoud herstellen"-waarschuwing veroorzaakt.
+  ws.pageSetup.horizontalDpi = 300;
+  ws.pageSetup.verticalDpi = 300;
+  help.pageSetup.horizontalDpi = 300;
+  help.pageSetup.verticalDpi = 300;
 
   return wb;
 }
