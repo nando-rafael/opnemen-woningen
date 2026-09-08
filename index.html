@@ -537,17 +537,48 @@ function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* parse a leading spoken number like "drie stopcontacten" -> aantal 3 */
-const NL_NUMBERS = {een:1,één:1,twee:2,drie:3,vier:4,vijf:5,zes:6,zeven:7,acht:8,negen:9,tien:10,elf:11,twaalf:12};
+/* parse een gesproken/getypte aantal, zowel vooraan als achteraan de zin,
+   met of zonder eenheid (m2, m1, x, stuks, keer) — bv:
+   "stucen muur 20m2", "opdekdeur 2x", "drie radiatoren", "kraan twee stuks" */
+const NL_NUMBERS = {
+  een:1, één:1, twee:2, drie:3, vier:4, vijf:5, zes:6, zeven:7, acht:8, negen:9,
+  tien:10, elf:11, twaalf:12, dertien:13, veertien:14, vijftien:15,
+  zestien:16, zeventien:17, achttien:18, negentien:19, twintig:20
+};
+const NL_NUMBERS_PATTERN = Object.keys(NL_NUMBERS).sort((a,b)=>b.length-a.length).join('|');
+const UNIT_WORD = '(?:m2|m²|m1|m¹|vierkante meter|strekkende meter|stuks?|stu|maal|keer|x)';
+
 function extractAantal(text){
-  const t = text.trim().toLowerCase();
-  const numMatch = t.match(/^(\d+)\s*(x|maal|stuks?)?\s+/);
-  if(numMatch) return {aantal: parseInt(numMatch[1],10), rest: t.slice(numMatch[0].length)};
-  for(const word in NL_NUMBERS){
-    const re = new RegExp('^'+word+'\\s+(x|maal|stuks?)?\\s*');
-    if(re.test(t)) return {aantal: NL_NUMBERS[word], rest: t.replace(re,'')};
+  const t = text.trim();
+  const tl = t.toLowerCase();
+
+  // 1) Achteraan, cijfer + evt. eenheid: "... 20m2", "... 2x", "... 3 stuks"
+  let m = tl.match(new RegExp('(\\d+(?:[.,]\\d+)?)\\s*'+UNIT_WORD+'?\\s*$'));
+  if(m){
+    const rest = t.slice(0, t.length - m[0].length).trim();
+    if(rest.length>0) return { aantal: parseFloat(m[1].replace(',','.')), rest };
   }
-  return {aantal:1, rest:t};
+
+  // 2) Achteraan, uitgeschreven getal: "... twee stuks", "... drie keer"
+  m = tl.match(new RegExp('\\b('+NL_NUMBERS_PATTERN+')\\s*'+UNIT_WORD+'?\\s*$'));
+  if(m){
+    const rest = t.slice(0, t.length - m[0].length).trim();
+    if(rest.length>0) return { aantal: NL_NUMBERS[m[1]], rest };
+  }
+
+  // 3) Vooraan, cijfer + evt. eenheid: "20m2 stucwerk", "3x radiator", "3 stuks kraan"
+  m = tl.match(new RegExp('^(\\d+(?:[.,]\\d+)?)\\s*'+UNIT_WORD+'?\\s+'));
+  if(m){
+    return { aantal: parseFloat(m[1].replace(',','.')), rest: t.slice(m[0].length).trim() };
+  }
+
+  // 4) Vooraan, uitgeschreven getal: "drie radiatoren", "twee x kraan"
+  m = tl.match(new RegExp('^('+NL_NUMBERS_PATTERN+')\\s*'+UNIT_WORD+'?\\s+'));
+  if(m){
+    return { aantal: NL_NUMBERS[m[1]], rest: t.slice(m[0].length).trim() };
+  }
+
+  return { aantal: 1, rest: t };
 }
 
 /* ===================== SPEECH ===================== */
