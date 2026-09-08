@@ -926,21 +926,22 @@ function renderSavedList(){
         <span><b>${euro(totaal)}</b></span>
       </div>
       <div class="saved-actions">
-        <button class="act-open" data-open="${o.id}">Openen</button>
-        <button class="act-export" data-export="${o.id}">Excel</button>
-        <button class="act-delete" data-del="${o.id}">Verwijder</button>
+<button class="act-open" data-open="${o.id}">Openen</button>
+<button class="act-export" data-export="${o.id}">Excel</button>
+<button class="act-share" data-share="${o.id}">Deel</button>
+<button class="act-delete" data-del="${o.id}">Verwijderen</button>
       </div>
     `;
     list.appendChild(el);
   });
-  list.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click', ()=>openOfferte(b.dataset.open)));
   list.querySelectorAll('[data-export]').forEach(b=>b.addEventListener('click', ()=>{
-    const o = loadAll().find(x=>x.id===b.dataset.export);
-    if(o) exportToExcel(o);
-  }));
-  list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>{
-    if(confirm('Deze offerte definitief verwijderen?')){ deleteOfferte(b.dataset.del); renderSavedList(); }
-  }));
+  const o = loadAll().find(x=>x.id===b.dataset.export);
+  if(o) exportToExcel(o);
+}));
+list.querySelectorAll('[data-share]').forEach(b=>b.addEventListener('click', ()=>{
+  const o = loadAll().find(x=>x.id===b.dataset.share);
+  if(o) shareExcel(o);
+}));
 }
 
 function openOfferte(id){
@@ -1151,23 +1152,38 @@ async function buildOfferteWorkbook(o){
 
   return wb;
 }
-
-async function exportToExcel(o){
-  if(o.lines.length===0){ showToast('Geen regels om te exporteren'); return; }
-  showToast('Excel wordt gemaakt...');
-  const wb = await buildOfferteWorkbook(o);
-  const buf = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-  const fname = 'Offerte_' + (o.header.referentie||'concept').replace(/[^a-z0-9_-]/gi,'_') + '_' + (o.header.datum||todayISO()) + '.xlsx';
-  const a = document.createElement('a');
-  const url = URL.createObjectURL(blob);
-  a.href = url; a.download = fname;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(()=> URL.revokeObjectURL(url), 4000);
-  showToast('Excel geëxporteerd');
-}
-
-
+  async function shareExcel(o){
+    if(o.lines.length===0){ showToast('Geen regels om te exporteren'); return; }
+    const wb = await buildOfferteWorkbook(o);
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fname = 'Offerte_' + (o.header.referentie||'concept').replace(/[^a-z0-9_-]/gi,'_') + '.xlsx';
+    const file = new File([blob], fname, { type: blob.type });
+    if(navigator.canShare && navigator.canShare({ files:[file] })){
+      try{
+        await navigator.share({ files:[file], title: fname });
+        showToast('Excel gedeeld');
+        return;
+      }catch(e){
+        if(e.name==='AbortError') return;
+      }
+    }
+    exportToExcel(o);
+  }
+  async function exportToExcel(o){
+    if(o.lines.length===0){ showToast('Geen regels om te exporteren'); return; }
+    showToast('Excel wordt gemaakt...');
+    const wb = await buildOfferteWorkbook(o);
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const fname = 'Offerte_' + (o.header.referentie||'concept').replace(/[^a-z0-9_-]/gi,'_') + '.xlsx';
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(()=> URL.revokeObjectURL(url), 4000);
+    showToast('Excel geëxporteerd');
+  }
 /* ===================== TOAST ===================== */
 let toastTimer;
 function showToast(msg){
