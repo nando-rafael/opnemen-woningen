@@ -1187,10 +1187,6 @@ async function buildOfferteWorkbook(o){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=> URL.revokeObjectURL(url), 4000);
     showToast('Excel geëxporteerd');
-    function openItem(id){
-  const item = savedItems.find(x => x.id === id);
-  if(!item) return;
-  exportToExcel(item);
 }
 /* ===================== TOAST ===================== */
 let toastTimer;
