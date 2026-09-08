@@ -580,7 +580,51 @@ function extractAantal(text){
 
   return { aantal: 1, rest: t };
 }
+/* herken een vertrek-woord ergens in de zin, ongeacht positie */
+const VERTREK_SPRAAK_MAP = {
+  'badkamer': 'Badkamer',
+  'balkon': 'Balkon',
+  'berging': 'Berging',
+  'bijkamer': 'Bijkamer',
+  'box': 'Box',
+  'cv kast': 'CV-kast', 'cv-kast': 'CV-kast', 'cvkast': 'CV-kast',
+  'dak': 'Dak',
+  'entree': 'Entree',
+  'galerij': 'Galerij',
+  'gevel': 'Gevel',
+  'hal': 'Hal',
+  'keuken': 'Keuken',
+  'meterkast': 'Meterkast', 'meter kast': 'Meterkast',
+  'overloop': 'Overloop',
+  'schuur': 'Schuur',
+  'slaapkamer 1': 'SL.K 1', 'slaapkamer een': 'SL.K 1', 'slaapkamer één': 'SL.K 1',
+  'slaapkamer 2': 'SL.K 2', 'slaapkamer twee': 'SL.K 2',
+  'slaapkamer 3': 'SL.K 3', 'slaapkamer drie': 'SL.K 3',
+  'slaapkamer 4': 'SL.K 4', 'slaapkamer vier': 'SL.K 4',
+  'slaapkamer 5': 'SL.K 5', 'slaapkamer vijf': 'SL.K 5',
+  'slaapkamer 6': 'SL.K 6', 'slaapkamer zes': 'SL.K 6',
+  'toilet': 'Toilet',
+  'trapkast': 'Trapkast', 'trap kast': 'Trapkast',
+  'trap': 'Trap',
+  'tuin': 'Tuin',
+  'vaste kast': 'Vaste kast',
+  'woonkamer': 'Woonkamer',
+  'zolder': 'Zolder'
+};
+// sorteer op lengte (langste eerst) zodat bv. "slaapkamer 1" voor "trap" wordt gecheckt
+const VERTREK_ZOEKWOORDEN = Object.keys(VERTREK_SPRAAK_MAP).sort((a,b)=>b.length-a.length);
 
+function extractVertrek(text){
+  const tl = ' ' + text.toLowerCase() + ' ';
+  for(const woord of VERTREK_ZOEKWOORDEN){
+    const re = new RegExp('(^|[^a-zàéëïöü])' + woord.replace(/\s+/g,'\\s+') + '($|[^a-zàéëïöü])');
+    if(re.test(tl)){
+      const rest = tl.replace(re, ' $2').replace(/\s+/g,' ').trim();
+      return { vertrek: VERTREK_SPRAAK_MAP[woord], rest };
+    }
+  }
+  return { vertrek: '', rest: text };
+}
 /* ===================== SPEECH ===================== */
 function initSpeech(){
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -627,11 +671,13 @@ function initSpeech(){
     }
     const combinedText = (finalText || interimText).trim();
     micTranscript.textContent = combinedText;
-    if(combinedText){
-      const parsed = extractAantal(combinedText);
-      document.getElementById('manualSearch').value = parsed.rest;
-      runSearch(parsed.rest);
-      pendingAantal = parsed.aantal;
+       if(combinedText){
+      const parsedAantal = extractAantal(combinedText);
+      const parsedVertrek = extractVertrek(parsedAantal.rest);
+      document.getElementById('manualSearch').value = parsedVertrek.rest;
+      runSearch(parsedVertrek.rest);
+      pendingAantal = parsedAantal.aantal;
+      pendingVertrek = parsedVertrek.vertrek;
     }
 };
 
@@ -641,17 +687,19 @@ function initSpeech(){
   });
 }
 let pendingAantal = 1;
-
+let pendingVertrek = '';
 /* ===================== LINES ===================== */
 function addLine(item){
-  const aantal = pendingAantal || 1;
-  pendingAantal = 1;
-  currentOfferte.lines.push({
-    lineId: uid(),
-    code: item.code, naam: item.naam, ehd: item.ehd,
-    mu: item.mu, mat: item.mat, aantal: aantal,
-    dekking: '', vertrek: ''
-  });
+       const aantal = pendingAantal || 1;
+    const vertrek = pendingVertrek || '';
+    pendingAantal = 1;
+    pendingVertrek = '';
+    currentOfferte.lines.push({
+      lineId: uid(),
+      code: item.code, naam: item.naam, ehd: item.ehd,
+      mu: item.mu, mat: item.mat, aantal: aantal,
+      dekking: '', vertrek: vertrek
+    });
   document.getElementById('matches').innerHTML = '';
   document.getElementById('manualSearch').value = '';
   document.getElementById('micTranscript').textContent = '';
