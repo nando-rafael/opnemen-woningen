@@ -802,6 +802,10 @@ function renderLines(){
     list.querySelectorAll('[data-qty]').forEach(inp=>inp.addEventListener('change',(e)=>setAantal(e.target.dataset.qty, e.target.value)));
     list.querySelectorAll('[data-dekking-select]').forEach(sel=>sel.addEventListener('change',(e)=>setDekking(e.target.dataset.dekkingSelect, e.target.value)));
     list.querySelectorAll('[data-vertrek-select]').forEach(sel=>sel.addEventListener('change',(e)=>setVertrek(e.target.dataset.vertrekSelect, e.target.value)));
+  list.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click', ()=>openItem(b.dataset.open)));
+list.querySelectorAll('[data-export]').forEach(b=>b.addEventListener('click', ()=>exportToExcel(b.dataset.export)));
+list.querySelectorAll('[data-share]').forEach(b=>b.addEventListener('click', ()=>shareItem(b.dataset.share)));
+list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>deleteItem(b.dataset.del)));
   }
 }
 
@@ -1183,7 +1187,11 @@ async function buildOfferteWorkbook(o){
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(()=> URL.revokeObjectURL(url), 4000);
     showToast('Excel geëxporteerd');
-  }
+    function openItem(id){
+  const item = savedItems.find(x => x.id === id);
+  if(!item) return;
+  exportToExcel(item);
+}
 /* ===================== TOAST ===================== */
 let toastTimer;
 function showToast(msg){
