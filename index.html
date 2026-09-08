@@ -617,7 +617,7 @@ function initSpeech(){
     micBtn.classList.remove('listening');
     micHint.textContent = e.error === 'not-allowed' ? 'Microfoon geblokkeerd — geef toestemming in je browser' : 'Kon niet verstaan, probeer opnieuw';
   };
-  recognition.onresult = (e)=>{
+ recognition.onresult = (e)=>{
     let finalText = '';
     let interimText = '';
     for(let i=0;i<e.results.length;i++){
@@ -625,14 +625,15 @@ function initSpeech(){
       if(e.results[i].isFinal) finalText += t;
       else interimText += t;
     }
-    micTranscript.textContent = finalText || interimText;
-    if(finalText){
-      const parsed = extractAantal(finalText);
+    const combinedText = (finalText || interimText).trim();
+    micTranscript.textContent = combinedText;
+    if(combinedText){
+      const parsed = extractAantal(combinedText);
       document.getElementById('manualSearch').value = parsed.rest;
       runSearch(parsed.rest);
       pendingAantal = parsed.aantal;
     }
-  };
+};
 
   micBtn.addEventListener('click', ()=>{
     if(recognizing){ recognition.stop(); return; }
