@@ -512,7 +512,22 @@ function runSearch(query){
   matchesEl.innerHTML = '';
   const q = (query||'').trim();
   if(q.length < 2) return;
-  const results = fuse.search(q, {limit:6});
+
+  // 1) Eerst de normale fuzzy-search proberen (zoals voorheen)
+  let results = fuse.search(q, {limit:6});
+
+  // 2) Alleen als die niks oplevert: terugvallen op los-woord matching.
+  //    Elk woord uit de zoekopdracht moet los in de naam voorkomen, ongeacht positie/volgorde.
+  //    Zo matcht "keuken" alsnog op "Keuken incl. tegelwerk verwijderen".
+  if(results.length===0){
+    const qWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
+    const wordMatches = qWords.length ? WERKZAAMHEDEN.filter(item=>{
+      const naamLower = item.naam.toLowerCase();
+      return qWords.every(w => naamLower.includes(w));
+    }) : [];
+    results = wordMatches.map(item=>({item}));
+  }
+
   if(results.length===0){
     matchesEl.innerHTML = '<div class="empty-state">Geen werkzaamheden gevonden voor "'+escapeHtml(q)+'"</div>';
     return;
