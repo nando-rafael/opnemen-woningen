@@ -694,7 +694,7 @@ function addLine(item){
     const vertrek = pendingVertrek || '';
     pendingAantal = 1;
     pendingVertrek = '';
-    currentOfferte.lines.push({
+   currentOfferte.lines.unshift({
       lineId: uid(),
       code: item.code, naam: item.naam, ehd: item.ehd,
       mu: item.mu, mat: item.mat, aantal: aantal,
