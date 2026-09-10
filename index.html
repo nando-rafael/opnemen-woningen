@@ -957,6 +957,15 @@ list.querySelectorAll('[data-share]').forEach(b=>b.addEventListener('click', ()=
   const o = loadAll().find(x=>x.id===b.dataset.share);
   if(o) shareExcel(o);
 }));
+list.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click', ()=>{
+  openOfferte(b.dataset.open);
+}));
+list.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', ()=>{
+  if(confirm('Deze offerte definitief verwijderen?')){
+    deleteOfferte(b.dataset.del);
+    renderSavedList();
+  }
+}));
 }
 
 function openOfferte(id){
