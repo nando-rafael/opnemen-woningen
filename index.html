@@ -260,10 +260,20 @@ nav.tabbar button.active .tico{color:var(--oranje);}
 
 .missed-panel{margin-top:20px;background:#fff;border-radius:12px;padding:14px 16px;}
 .missed-header{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:13px;color:var(--tekst-zwak);cursor:pointer;}
-.missed-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;font-size:13px;}
+.missed-item{padding:8px 0;border-bottom:1px solid #eee;font-size:13px;}
 .missed-item:last-child{border-bottom:none;}
+.missed-row{display:flex;justify-content:space-between;align-items:center;gap:8px;}
 .missed-term{color:var(--tekst);font-weight:600;}
 .missed-count{color:var(--tekst-zwak);font-size:12px;}
+.missed-link-btn{background:none;border:1.5px solid var(--blauw);color:var(--blauw);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.missed-link-panel{margin-top:8px;padding:10px;background:var(--achtergrond);border-radius:8px;}
+.missed-link-search{width:100%;padding:8px;border-radius:6px;border:1px solid var(--lijn);font-size:13px;box-sizing:border-box;}
+.missed-link-results{margin-top:6px;}
+.missed-link-result{padding:8px;border-radius:6px;background:#fff;margin-top:4px;cursor:pointer;border:1px solid var(--lijn);}
+.missed-link-result:hover{border-color:var(--blauw);}
+.missed-link-result .mnaam{display:block;font-weight:700;font-size:12.5px;color:var(--tekst);}
+.missed-link-result .mmeta{display:block;font-size:11px;color:var(--tekst-zwak);margin-top:2px;}
+.save-missed-btn{width:100%;margin-top:10px;padding:10px;border-radius:8px;border:1.5px solid var(--oranje);background:#fff;color:var(--oranje);font-weight:700;font-size:13px;cursor:pointer;}
 
 .section-title{
   font-size:12px;font-weight:700;color:var(--tekst-zwak);text-transform:uppercase;
@@ -368,6 +378,7 @@ nav.tabbar button.active .tico{color:var(--oranje);}
       <div class="manual-search">
         <input type="text" id="manualSearch" placeholder="Of typ een werkzaamheid...">
       </div>
+      <button id="saveMissedBtn" class="save-missed-btn">Niet gevonden? Zoekopdracht opslaan</button>
       <div id="micWarn"></div>
       <div class="matches" id="matches"></div>
     </div>
@@ -553,21 +564,90 @@ function renderMissedList(){
     return;
   }
   el.innerHTML = list.map(m => `
-    <div class="missed-item">
-      <span class="missed-term">"${escapeHtml(m.term)}"</span>
-      <span class="missed-count">${m.count}x</span>
+    <div class="missed-item" data-term="${escapeHtml(m.term)}">
+      <div class="missed-row">
+        <span class="missed-term">"${escapeHtml(m.term)}"</span>
+        <span class="missed-count">${m.count}x</span>
+        <button class="missed-link-btn">Koppelen</button>
+      </div>
+      <div class="missed-link-panel" style="display:none;">
+        <input type="text" class="missed-link-search" placeholder="Zoek de juiste werkzaamheid...">
+        <div class="missed-link-results"></div>
+      </div>
+    </div>
+  `).join('');
+}
+function searchWerkzaamhedenSimple(q){
+  const ql = q.trim().toLowerCase();
+  if(ql.length < 2) return [];
+  return WERKZAAMHEDEN.filter(item =>
+    item.naam.toLowerCase().includes(ql) || item.code.toLowerCase().includes(ql)
+  ).slice(0, 8);
+}
+function renderLinkResults(itemEl){
+  const term = itemEl.dataset.term;
+  const q = itemEl.querySelector('.missed-link-search').value;
+  const resultsEl = itemEl.querySelector('.missed-link-results');
+  const results = searchWerkzaamhedenSimple(q);
+  if(results.length === 0){
+    resultsEl.innerHTML = q.trim().length >= 2 ? '<div class="empty-state">Niks gevonden</div>' : '';
+    return;
+  }
+  resultsEl.innerHTML = results.map(item => `
+    <div class="missed-link-result" data-code="${escapeHtml(item.code)}" data-term="${escapeHtml(term)}">
+      <span class="mnaam">${escapeHtml(item.naam)}</span>
+      <span class="mmeta">Code ${escapeHtml(item.code)}</span>
     </div>
   `).join('');
 }
 
+/* ===================== ALIASSEN ===================== */
+const ALIAS_KEY = 'aliassen_v1';
+
+function loadAliases(){
+  try{
+    const raw = localStorage.getItem(ALIAS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){ return {}; }
+}
+function saveAliases(obj){
+  localStorage.setItem(ALIAS_KEY, JSON.stringify(obj));
+}
+function addAlias(code, term){
+  const aliases = loadAliases();
+  if(!aliases[code]) aliases[code] = [];
+  const t = term.trim().toLowerCase();
+  if(t && !aliases[code].includes(t)){
+    aliases[code].push(t);
+    saveAliases(aliases);
+  }
+  buildSearchIndex();
+}
+function removeMissedTerm(term){
+  const list = loadMissed().filter(m => m.term !== term);
+  saveMissed(list);
+}
+
 /* ===================== FUSE SEARCH ===================== */
-const fuse = new Fuse(WERKZAAMHEDEN, {
-  keys:['naam','code'],
-  threshold:0.38,
-  ignoreLocation:true,
-  minMatchCharLength:2,
-  distance:200
-});
+// SEARCH_INDEX combineert de officiele naam met eventuele aliassen, zodat
+// gekoppelde termen (bv. "keukenblok" -> code 104601) ook meegezocht worden.
+let SEARCH_INDEX = [];
+let fuse = null;
+function buildSearchIndex(){
+  const aliases = loadAliases();
+  SEARCH_INDEX = WERKZAAMHEDEN.map(item => {
+    const extra = (aliases[item.code] || []).join(' ');
+    return Object.assign({}, item, { zoektekst: (item.naam + ' ' + extra).trim() });
+  });
+  fuse = new Fuse(SEARCH_INDEX, {
+    keys:['zoektekst','code'],
+    threshold:0.38,
+    ignoreLocation:true,
+    minMatchCharLength:2,
+    distance:200
+  });
+}
+buildSearchIndex();
 
 function runSearch(query){
   const matchesEl = document.getElementById('matches');
@@ -587,8 +667,8 @@ function runSearch(query){
   // 1) Eerst los-woord matching op stam-niveau: elk woord uit de zoekopdracht moet
   //    overlappen met minstens één woord in de naam, ongeacht positie/volgorde.
   const qWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
-  const wordMatches = qWords.length ? WERKZAAMHEDEN.filter(item=>{
-    const naamWords = item.naam.toLowerCase().split(/\s+/);
+  const wordMatches = qWords.length ? SEARCH_INDEX.filter(item=>{
+    const naamWords = item.zoektekst.toLowerCase().split(/\s+/);
     return qWords.every(qw => naamWords.some(nw => tokensOverlap(qw, nw)));
   }) : [];
 
@@ -709,6 +789,12 @@ function extractVertrek(text){
     const re = new RegExp('(^|[^a-zàéëïöü])' + woord.replace(/\s+/g,'\\s+') + '($|[^a-zàéëïöü])');
     if(re.test(tl)){
       const rest = tl.replace(re, ' $2').replace(/\s+/g,' ').trim();
+      // Als er na het weghalen van het vertrek-woord niks overblijft, was de hele
+      // zin alleen het vertrek zelf (bv. iemand zegt gewoon "keuken"). Behandel
+      // dat dan als zoekterm in plaats van een lege rest, anders gebeurt er niks.
+      if(!rest){
+        return { vertrek: VERTREK_SPRAAK_MAP[woord], rest: text.trim() };
+      }
       return { vertrek: VERTREK_SPRAAK_MAP[woord], rest };
     }
   }
@@ -939,6 +1025,19 @@ document.addEventListener('DOMContentLoaded', ()=>{
     runSearch(e.target.value);
   });
 
+  document.getElementById('saveMissedBtn').addEventListener('click', ()=>{
+    clearTimeout(missedLogTimer);
+    const typed = document.getElementById('manualSearch').value.trim();
+    const gesproken = document.getElementById('micTranscript').textContent.trim();
+    const term = typed || gesproken;
+    if(!term){
+      showToast('Spreek of typ eerst iets in');
+      return;
+    }
+    logMissedSearch(term);
+    showToast('Opgeslagen: "' + term + '"');
+  });
+
   document.getElementById('headerToggle').addEventListener('click', ()=>{
     const box = document.getElementById('headerFields');
     const toggle = document.getElementById('headerToggle');
@@ -992,6 +1091,29 @@ document.addEventListener('DOMContentLoaded', ()=>{
     if(confirm('Hele lijst met niet-gevonden zoekopdrachten wissen?')){
       saveMissed([]);
       renderMissedList();
+    }
+  });
+
+  document.getElementById('missedList').addEventListener('click', (e)=>{
+    const linkBtn = e.target.closest('.missed-link-btn');
+    if(linkBtn){
+      const panel = linkBtn.closest('.missed-item').querySelector('.missed-link-panel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      return;
+    }
+    const resultEl = e.target.closest('.missed-link-result');
+    if(resultEl){
+      const code = resultEl.dataset.code;
+      const term = resultEl.dataset.term;
+      addAlias(code, term);
+      removeMissedTerm(term);
+      renderMissedList();
+      showToast('Gekoppeld aan code ' + code);
+    }
+  });
+  document.getElementById('missedList').addEventListener('input', (e)=>{
+    if(e.target.classList.contains('missed-link-search')){
+      renderLinkResults(e.target.closest('.missed-item'));
     }
   });
 });
