@@ -488,6 +488,7 @@ let currentOfferte = null; // {id, status, header:{...}, lines:[...], createdAt,
 let recognizing = false;
 let recognition = null;
 let missedLogTimer = null;
+let processedFinalCount = 0;
 
 function uid(){ return 'o_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -672,6 +673,22 @@ function runSearch(query){
     return qWords.every(qw => naamWords.some(nw => tokensOverlap(qw, nw)));
   }) : [];
 
+  // Zet gekoppelde aliassen bovenaan: als de zoekterm (bijna) letterlijk overeenkomt
+  // met een alias die je zelf hebt gekoppeld, moet dat resultaat als eerste getoond
+  // worden, ongeacht waar het item verder in de lijst zou staan.
+  const aliasesNow = loadAliases();
+  function aliasMatchScore(item){
+    const codeAliases = aliasesNow[item.code] || [];
+    const ql = q.toLowerCase();
+    let best = 0;
+    codeAliases.forEach(al => {
+      if(al === ql) best = Math.max(best, 2);
+      else if(al.includes(ql) || ql.includes(al)) best = Math.max(best, 1);
+    });
+    return best;
+  }
+  wordMatches.sort((a,b) => aliasMatchScore(b) - aliasMatchScore(a));
+
   // 2) Alleen als die niks oplevert: terugvallen op de brede fuzzy-search
   //    (voor verspreking/typefouten die geen woord-overlap hebben).
   let results = wordMatches.length
@@ -822,6 +839,7 @@ function initSpeech(){
 
   recognition.onstart = ()=>{
     recognizing = true;
+    processedFinalCount = 0;
     micBtn.classList.add('listening');
     micHint.textContent = 'Luisteren... spreek nu';
     micTranscript.textContent = '';
@@ -837,14 +855,22 @@ function initSpeech(){
     micHint.textContent = e.error === 'not-allowed' ? 'Microfoon geblokkeerd — geef toestemming in je browser' : 'Kon niet verstaan, probeer opnieuw';
   };
  recognition.onresult = (e)=>{
-    let finalText = '';
+    // In continuous modus blijven eerder afgeronde zinnen in e.results staan.
+    // We verwerken daarom alleen wat NIEUW is sinds de vorige keer, zodat een
+    // net afgeronde zin (bv. "keukenblad") niet blijft plakken aan of de
+    // volgende zin (bv. "slopen") overschaduwt.
     let interimText = '';
-    for(let i=0;i<e.results.length;i++){
+    let newFinalText = '';
+    for(let i = processedFinalCount; i < e.results.length; i++){
       const t = e.results[i][0].transcript;
-      if(e.results[i].isFinal) finalText += t;
-      else interimText += t;
+      if(e.results[i].isFinal){
+        newFinalText += (newFinalText ? ' ' : '') + t;
+        processedFinalCount = i + 1;
+      } else {
+        interimText += t;
+      }
     }
-    const combinedText = (finalText || interimText).trim();
+    const combinedText = (newFinalText || interimText).trim();
     micTranscript.textContent = combinedText;
        if(combinedText){
       const parsedAantal = extractAantal(combinedText);
