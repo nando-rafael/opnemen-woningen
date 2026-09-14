@@ -258,6 +258,13 @@ nav.tabbar button.active .tico{color:var(--oranje);}
 .act-export{background:#fff;color:var(--blauw);border:1.5px solid var(--blauw)!important;}
 .act-delete{background:#fff;color:var(--rood);border:1.5px solid var(--rood)!important;}
 
+.missed-panel{margin-top:20px;background:#fff;border-radius:12px;padding:14px 16px;}
+.missed-header{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:13px;color:var(--tekst-zwak);cursor:pointer;}
+.missed-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #eee;font-size:13px;}
+.missed-item:last-child{border-bottom:none;}
+.missed-term{color:var(--tekst);font-weight:600;}
+.missed-count{color:var(--tekst-zwak);font-size:12px;}
+
 .section-title{
   font-size:12px;font-weight:700;color:var(--tekst-zwak);text-transform:uppercase;
   letter-spacing:0.5px;margin:14px 2px 8px;
@@ -388,6 +395,17 @@ nav.tabbar button.active .tico{color:var(--oranje);}
       <input type="text" id="savedSearch" placeholder="Zoeken op adres of referentie...">
     </div>
     <div id="savedList"></div>
+
+    <div class="missed-panel">
+      <div class="missed-header" id="missedToggle">
+        <span>🔍 Niet gevonden zoekopdrachten (<span id="missedCount">0</span>)</span>
+        <span id="missedChevron">▾</span>
+      </div>
+      <div id="missedBody" style="display:none;">
+        <div id="missedList"></div>
+        <button id="missedClearBtn" class="act-delete" style="margin-top:10px;">Lijst wissen</button>
+      </div>
+    </div>
   </main>
 
   <nav class="tabbar">
@@ -458,6 +476,7 @@ const STORAGE_KEY = 'okebouw_offertes_v1';
 let currentOfferte = null; // {id, status, header:{...}, lines:[...], createdAt, updatedAt}
 let recognizing = false;
 let recognition = null;
+let missedLogTimer = null;
 
 function uid(){ return 'o_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
@@ -498,6 +517,49 @@ function deleteOfferte(id){
   saveAll(all);
 }
 
+/* ===================== NIET GEVONDEN LOG ===================== */
+const MISSED_KEY = 'missedSearches_v1';
+
+function loadMissed(){
+  try{
+    const raw = localStorage.getItem(MISSED_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveMissed(list){
+  localStorage.setItem(MISSED_KEY, JSON.stringify(list));
+}
+function logMissedSearch(q){
+  const term = q.trim().toLowerCase();
+  if(!term) return;
+  const list = loadMissed();
+  const existing = list.find(m => m.term === term);
+  if(existing){
+    existing.count += 1;
+    existing.lastSeen = new Date().toISOString();
+  } else {
+    list.push({ term, count: 1, lastSeen: new Date().toISOString() });
+  }
+  // Lijst niet onbeperkt laten groeien
+  if(list.length > 300) list.splice(0, list.length - 300);
+  saveMissed(list);
+}
+function renderMissedList(){
+  const list = loadMissed().sort((a,b)=> b.count - a.count);
+  document.getElementById('missedCount').textContent = list.length;
+  const el = document.getElementById('missedList');
+  if(list.length===0){
+    el.innerHTML = '<div class="empty-state">Nog geen gemiste zoekopdrachten.</div>';
+    return;
+  }
+  el.innerHTML = list.map(m => `
+    <div class="missed-item">
+      <span class="missed-term">"${escapeHtml(m.term)}"</span>
+      <span class="missed-count">${m.count}x</span>
+    </div>
+  `).join('');
+}
+
 /* ===================== FUSE SEARCH ===================== */
 const fuse = new Fuse(WERKZAAMHEDEN, {
   keys:['naam','code'],
@@ -511,25 +573,37 @@ function runSearch(query){
   const matchesEl = document.getElementById('matches');
   matchesEl.innerHTML = '';
   const q = (query||'').trim();
+  clearTimeout(missedLogTimer);
   if(q.length < 2) return;
 
-  // 1) Eerst de normale fuzzy-search proberen (zoals voorheen)
-  let results = fuse.search(q, {limit:6});
-
-  // 2) Alleen als die niks oplevert: terugvallen op los-woord matching.
-  //    Elk woord uit de zoekopdracht moet los in de naam voorkomen, ongeacht positie/volgorde.
-  //    Zo matcht "keuken" alsnog op "Keuken incl. tegelwerk verwijderen".
-  if(results.length===0){
-    const qWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
-    const wordMatches = qWords.length ? WERKZAAMHEDEN.filter(item=>{
-      const naamLower = item.naam.toLowerCase();
-      return qWords.every(w => naamLower.includes(w));
-    }) : [];
-    results = wordMatches.map(item=>({item}));
+  // Slimme woord-overlap: "keukenblok" matcht ook op naam-woord "keuken" (en andersom),
+  // zolang het gedeelde stuk minimaal 4 tekens is. Zo hoeft de gesproken term niet
+  // exact hetzelfde woord te zijn als in de prijslijst.
+  function tokensOverlap(a, b){
+    if(a.length<4 || b.length<4) return a===b;
+    return a.includes(b) || b.includes(a);
   }
+
+  // 1) Eerst los-woord matching op stam-niveau: elk woord uit de zoekopdracht moet
+  //    overlappen met minstens één woord in de naam, ongeacht positie/volgorde.
+  const qWords = q.toLowerCase().split(/\s+/).filter(w => w.length >= 2);
+  const wordMatches = qWords.length ? WERKZAAMHEDEN.filter(item=>{
+    const naamWords = item.naam.toLowerCase().split(/\s+/);
+    return qWords.every(qw => naamWords.some(nw => tokensOverlap(qw, nw)));
+  }) : [];
+
+  // 2) Alleen als die niks oplevert: terugvallen op de brede fuzzy-search
+  //    (voor verspreking/typefouten die geen woord-overlap hebben).
+  let results = wordMatches.length
+    ? wordMatches.map(item=>({item}))
+    : fuse.search(q, {limit:6});
 
   if(results.length===0){
     matchesEl.innerHTML = '<div class="empty-state">Geen werkzaamheden gevonden voor "'+escapeHtml(q)+'"</div>';
+    // Pas loggen als de zoekterm 1.2s niet meer verandert (voorkomt loggen van halve woorden
+    // terwijl je nog aan het inspreken/typen bent)
+    missedLogTimer = setTimeout(()=> logMissedSearch(q), 1200);
+
     return;
   }
   results.forEach(r=>{
@@ -709,7 +783,7 @@ function addLine(item){
     const vertrek = pendingVertrek || '';
     pendingAantal = 1;
     pendingVertrek = '';
-   currentOfferte.lines.unshift({
+    currentOfferte.lines.unshift({
       lineId: uid(),
       code: item.code, naam: item.naam, ehd: item.ehd,
       mu: item.mu, mat: item.mat, aantal: aantal,
@@ -903,8 +977,22 @@ document.addEventListener('DOMContentLoaded', ()=>{
       const view = btn.dataset.view;
       document.getElementById('view-opname').style.display = view==='opname' ? 'block':'none';
       document.getElementById('view-opgeslagen').style.display = view==='opgeslagen' ? 'block':'none';
-      if(view==='opgeslagen') renderSavedList();
+      if(view==='opgeslagen'){ renderSavedList(); renderMissedList(); }
     });
+  });
+
+  document.getElementById('missedToggle').addEventListener('click', ()=>{
+    const body = document.getElementById('missedBody');
+    const chevron = document.getElementById('missedChevron');
+    const open = body.style.display !== 'none';
+    body.style.display = open ? 'none' : 'block';
+    chevron.textContent = open ? '▾' : '▴';
+  });
+  document.getElementById('missedClearBtn').addEventListener('click', ()=>{
+    if(confirm('Hele lijst met niet-gevonden zoekopdrachten wissen?')){
+      saveMissed([]);
+      renderMissedList();
+    }
   });
 });
 
