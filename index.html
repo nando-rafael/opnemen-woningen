@@ -732,7 +732,7 @@ const NL_NUMBERS = {
   zestien:16, zeventien:17, achttien:18, negentien:19, twintig:20
 };
 const NL_NUMBERS_PATTERN = Object.keys(NL_NUMBERS).sort((a,b)=>b.length-a.length).join('|');
-const UNIT_WORD = '(?:m2|m²|m1|m¹|vierkante meter|strekkende meter|stuks?|stu|maal|keer|x)';
+const UNIT_WORD = '(?:m2|m²|m1|m¹|vierkante meters?|strekkende meters?|stuks?|stu|maal|keer|x)';
 
 function extractAantal(text){
   const t = text.trim();
