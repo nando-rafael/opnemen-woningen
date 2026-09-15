@@ -1333,8 +1333,14 @@ async function buildOfferteWorkbook(o){
   headers.forEach((h,i)=>{ headRow.getCell(i+1).value = h; styleCell(headRow.getCell(i+1), {bold:true, fill:XLS_GREY}); });
 
   // Data rows
+  // Alleen voor de Excel-export sorteren we op vertrek (alfabetisch, net als de
+  // officiele rekentool). De volgorde in de app zelf (nieuwste bovenaan bij
+  // inspreken) blijft ongemoeid — dit is een kopie, geen wijziging van o.lines.
   const dataFirstRow = headRowNum + 1;
-  o.lines.forEach((l,idx)=>{
+  const sortedLines = [...o.lines].sort((a, b) =>
+    (a.vertrek || '').localeCompare(b.vertrek || '', 'nl', { sensitivity: 'base' })
+  );
+  sortedLines.forEach((l,idx)=>{
     const rowNum = dataFirstRow + idx;
     const row = ws.getRow(rowNum);
     const arbeid = l.mu * l.aantal * uurloon;
