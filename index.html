@@ -1227,6 +1227,7 @@ const XLS_GOLD  = 'FFFFE699'; // codes die beginnen met 4 (schoonmaak) - zelfde 
 const XLS_GREY  = 'FFF2F2F2'; // kolomkoppen werkzaamheden
 const XLS_BORDER = {style:'thin', color:{argb:'FFBFBFBF'}};
 const XLS_BORDER_ALL = {top:XLS_BORDER,bottom:XLS_BORDER,left:XLS_BORDER,right:XLS_BORDER};
+const XLS_BORDER_ROW = {bottom:XLS_BORDER}; // strakke stijl: alleen een lijn tussen rijen, geen vol raster
 
 const DEKKING_OPTIONS = ['RB','MOvV','MOPLUS','MOYS','Verkoop','Inv. zwam','Inv. brandv.','Overige inv.','Ingr. verb.','Verduurzaming','MO+ onderh.','MO+ inv.'];
 const VERTREK_OPTIONS = ['Badkamer','Balkon','Berging','Bijkamer','Box','CV-kast','Dak','Entree','Galerij','Gevel','Hal','Keuken','Meterkast','Overig','Overloop','Schuur','SL.K 1','SL.K 2','SL.K 3','SL.K 4','SL.K 5','SL.K 6','Toilet','Trap','Trapkast','Tuin','Vaste kast','Woonkamer','Zolder'];
@@ -1236,9 +1237,10 @@ function fillCell(cellObj, argb){
 }
 function styleCell(cellObj, opts){
   opts = opts || {};
-  cellObj.font = Object.assign({name:'Calibri', size: opts.sz||10}, opts.bold?{bold:true}:{}, opts.color?{color:{argb:opts.color}}:{});
+  cellObj.font = Object.assign({name:'Arial', size: opts.sz||8}, opts.bold?{bold:true}:{}, opts.color?{color:{argb:opts.color}}:{});
   if(opts.fill) fillCell(cellObj, opts.fill);
-  if(opts.border!==false) cellObj.border = XLS_BORDER_ALL;
+  if(opts.border===true) cellObj.border = XLS_BORDER_ALL;       // volledig raster, alleen expliciet aanvragen
+  else if(opts.border!==false) cellObj.border = XLS_BORDER_ROW; // standaard: strakke stijl, alleen rijlijn
   if(opts.align) cellObj.alignment = Object.assign({vertical:'middle'}, {horizontal:opts.align}, opts.wrap?{wrapText:true}:{});
   else if(opts.wrap) cellObj.alignment = {vertical:'middle', wrapText:true};
   if(opts.numFmt) cellObj.numFmt = opts.numFmt;
@@ -1329,8 +1331,12 @@ async function buildOfferteWorkbook(o){
   // Column headers — letterlijk zoals het origineel
   const headRowNum = bannerRowNum + 1;
   const headers = ['dekking','vertrek','code','hvh','ehd','naam','mu','mat','btw loon','btw mat','arbeid','mu tot','mat tot','totaal'];
+  const RIGHT_ALIGN_COLS = new Set([4,7,8,9,10,11,12,13,14]); // numerieke kolommen ook rechts uitgelijnd in de kop, net als origineel
   const headRow = ws.getRow(headRowNum);
-  headers.forEach((h,i)=>{ headRow.getCell(i+1).value = h; styleCell(headRow.getCell(i+1), {bold:true, fill:XLS_GREY}); });
+  headers.forEach((h,i)=>{
+    headRow.getCell(i+1).value = h;
+    styleCell(headRow.getCell(i+1), {bold:true, fill:XLS_GREY, align: RIGHT_ALIGN_COLS.has(i+1) ? 'right' : 'left'});
+  });
 
   // Data rows
   // Alleen voor de Excel-export sorteren we op vertrek (alfabetisch, net als de
@@ -1360,19 +1366,19 @@ async function buildOfferteWorkbook(o){
     row.getCell(5).value = l.ehd||'';
     styleCell(row.getCell(5), {align:'center'});
     row.getCell(6).value = l.naam;
-    styleCell(row.getCell(6), {wrap:true});
+    styleCell(row.getCell(6), {}); // geen wrap: tekst loopt over lege ruimte, rij blijft compact
     row.getCell(7).value = l.mu;
-    styleCell(row.getCell(7), {align:'right', numFmt:'0.####'});
+    styleCell(row.getCell(7), {align:'right', numFmt:'#,##0.00'});
     row.getCell(8).value = Math.round(l.mat*100)/100;                       // mat (prijs per eenheid)
     styleCell(row.getCell(8), {align:'right', numFmt:'"€" #,##0.00'});
     row.getCell(9).value = l.btwl!=null ? l.btwl : 0.21;                    // btw loon
     styleCell(row.getCell(9), {align:'right', numFmt:'0%'});
     row.getCell(10).value = l.btwm!=null ? l.btwm : 0.21;                   // btw mat
     styleCell(row.getCell(10), {align:'right', numFmt:'0%'});
-    row.getCell(11).value = Math.round(arbeid*100)/100;                     // arbeid
-    styleCell(row.getCell(11), {align:'right', numFmt:'"€" #,##0.00'});
-    row.getCell(12).value = Math.round(muTot*10000)/10000;                  // mu tot
-    styleCell(row.getCell(12), {align:'right', numFmt:'0.####'});
+    row.getCell(11).value = Math.round(arbeid*100)/100;                     // arbeid — geen euroteken, net als origineel
+    styleCell(row.getCell(11), {align:'right', numFmt:'#,##0.00'});
+    row.getCell(12).value = Math.round(muTot*100)/100;                      // mu tot — geen euroteken, 2 decimalen
+    styleCell(row.getCell(12), {align:'right', numFmt:'#,##0.00'});
     row.getCell(13).value = Math.round(matTot*100)/100;                     // mat tot
     styleCell(row.getCell(13), {align:'right', numFmt:'"€" #,##0.00'});
     row.getCell(14).value = Math.round(totaal*100)/100;                     // totaal
