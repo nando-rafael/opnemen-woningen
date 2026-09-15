@@ -1346,8 +1346,15 @@ async function buildOfferteWorkbook(o){
   const sortedLines = [...o.lines].sort((a, b) =>
     (a.vertrek || '').localeCompare(b.vertrek || '', 'nl', { sensitivity: 'base' })
   );
+  let rowCursor = dataFirstRow;
+  let vorigVertrek = null;
   sortedLines.forEach((l,idx)=>{
-    const rowNum = dataFirstRow + idx;
+    // Bij elke wisseling van vertrek t.o.v. de vorige regel: één lege rij ertussen,
+    // zodat de groepen duidelijk van elkaar gescheiden zijn (net als in de rekentool).
+    if(idx > 0 && (l.vertrek||'') !== vorigVertrek){
+      rowCursor++;
+    }
+    const rowNum = rowCursor;
     const row = ws.getRow(rowNum);
     const arbeid = l.mu * l.aantal * uurloon;
     const muTot  = l.mu * l.aantal;
@@ -1383,10 +1390,15 @@ async function buildOfferteWorkbook(o){
     styleCell(row.getCell(13), {align:'right', numFmt:'"€" #,##0.00'});
     row.getCell(14).value = Math.round(totaal*100)/100;                     // totaal
     styleCell(row.getCell(14), {align:'right', numFmt:'"€" #,##0.00'});
+
+    vorigVertrek = l.vertrek || '';
+    rowCursor++;
   });
+  const lastDataRow = rowCursor - 1; // laatste daadwerkelijk gebruikte rij (incl. scheidingsregels)
+  const totalLinesUsed = lastDataRow - dataFirstRow + 1;
 
   // Totals row
-  const totRowNum = dataFirstRow + o.lines.length;
+  const totRowNum = lastDataRow + 1;
   const totRow = ws.getRow(totRowNum);
   totRow.getCell(6).value = 'Totaal';
   styleCell(totRow.getCell(6), {bold:true});
@@ -1405,7 +1417,7 @@ async function buildOfferteWorkbook(o){
   DEKKING_OPTIONS.forEach((v,i)=> help.getCell(i+1,1).value = v);
   VERTREK_OPTIONS.forEach((v,i)=> help.getCell(i+1,2).value = v);
 
-  const dvLastRow = dataFirstRow + Math.max(o.lines.length, 30) - 1; // ruimte voor extra handmatige regels
+  const dvLastRow = dataFirstRow + Math.max(totalLinesUsed, 30) - 1; // ruimte voor extra handmatige regels
   ws.dataValidations.add(`A${dataFirstRow}:A${dvLastRow}`, {
     type:'list', allowBlank:true, formulae:[`Lijsten!$A$1:$A$${DEKKING_OPTIONS.length}`]
   });
@@ -1413,7 +1425,7 @@ async function buildOfferteWorkbook(o){
     type:'list', allowBlank:true, formulae:[`Lijsten!$B$1:$B$${VERTREK_OPTIONS.length}`]
   });
   // groene achtergrond ook op de extra lege regels, net als het origineel
-  for(let r=dataFirstRow+o.lines.length; r<=dvLastRow; r++){
+  for(let r=lastDataRow+1; r<=dvLastRow; r++){
     styleCell(ws.getRow(r).getCell(1), {fill:XLS_GREEN});
     styleCell(ws.getRow(r).getCell(2), {fill:XLS_GREEN});
   }
