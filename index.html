@@ -873,10 +873,13 @@ function initSpeech(){
     const combinedText = (newFinalText || interimText).trim();
     micTranscript.textContent = combinedText;
        if(combinedText){
-      const parsedAantal = extractAantal(combinedText);
-      const parsedVertrek = extractVertrek(parsedAantal.rest);
-      document.getElementById('manualSearch').value = parsedVertrek.rest;
-      runSearch(parsedVertrek.rest);
+      // Belangrijk: eerst het vertrek eruit halen, dan pas het aantal. Anders ziet
+      // "slaapkamer 1" (of 2 t/m 6) er voor extractAantal uit als "aantal 1", die
+      // dan het cijfer wegkaapt vóórdat "slaapkamer 1" als geheel herkend wordt.
+      const parsedVertrek = extractVertrek(combinedText);
+      const parsedAantal = extractAantal(parsedVertrek.rest);
+      document.getElementById('manualSearch').value = parsedAantal.rest;
+      runSearch(parsedAantal.rest);
       pendingAantal = parsedAantal.aantal;
       pendingVertrek = parsedVertrek.vertrek;
     }
